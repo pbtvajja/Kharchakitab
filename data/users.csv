@@ -1,1 +1,2 @@
 username,password_hash,salary
+admin,scrypt:32768:8:1$BujqNLzjqrH01rLA$4ac198e0bc4198de7be856c630762d0de1ee97b2759177a7a2c9016431cb0e18fcdfc02f0d6430be29c0f82e021911c33b99507bac1c0a6909ccfeb16223a306,2000.0
