@@ -1,35 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Budget Dashboard</title>
+  <title>KharchaKitab</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
-  <img src="/static/kharchakitab_128.png" alt="KharchaKitab Logo" width="80" class="mb-3">
-
 </head>
 <body class="bg-light">
-  <div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2>Welcome, {{ session['user'] }}</h2>
-      <a href="/logout" class="btn btn-outline-danger">Logout</a>
-    </div>
+  <div class="container py-4 text-center">
+    <img src="/static/kharchakitab_128.png" alt="KharchaKitab Logo" width="80" class="mb-3">
+    <h2>Welcome, {{ session['user'] }}</h2>
+    <a href="/logout" class="btn btn-outline-danger float-end mb-2">Logout</a>
+  </div>
 
-    <div class="row text-center mb-4">
+  <div class="container mb-4">
+    <div class="row text-center">
       {% for cat, amt in summary.items() %}
       <div class="col-md-4">
         <div class="card border-success shadow-sm">
           <div class="card-body">
             <h5 class="card-title">{{ cat }}</h5>
-            <p class="card-text">${{ '%.2f'|format(amt) }}</p>
+            <p class="card-text">₹{{ '%.2f'|format(amt) }}</p>
           </div>
         </div>
       </div>
       {% endfor %}
     </div>
+  </div>
 
-    <form method="POST" action="/add" class="card p-4 mb-4 shadow-sm">
+  <div class="container mb-4">
+    <form method="POST" action="/add" class="card p-4 shadow-sm">
       <h4 class="mb-3">Add New Expense</h4>
       <div class="row g-3">
         <div class="col-md-3">
@@ -53,8 +54,10 @@
         </div>
       </div>
     </form>
+  </div>
 
-    <div class="card shadow-sm mb-4">
+  <div class="container mb-4">
+    <div class="card shadow-sm">
       <div class="card-body">
         <h4 class="card-title">Recent Entries</h4>
         <div class="table-responsive">
@@ -81,16 +84,32 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <div class="card shadow-sm mb-4">
-      <div class="card-body graph-container">
-        {{ graph_html | safe }}
+  <div class="container mb-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h4 class="card-title">Daily Spending Trend</h4>
+        <div class="graph-container">
+          {{ graph_html1 | safe }}
+        </div>
       </div>
     </div>
+  </div>
 
-    <div class="text-center">
-      <a href="/download" class="btn btn-outline-secondary">Download CSV</a>
+  <div class="container mb-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h4 class="card-title">50-30-20 Budget Comparison</h4>
+        <div class="graph-container">
+          {{ graph_html2 | safe }}
+        </div>
+      </div>
     </div>
+  </div>
+
+  <div class="container text-center mb-5">
+    <a href="/download" class="btn btn-outline-secondary">Download CSV</a>
   </div>
 </body>
 </html>
