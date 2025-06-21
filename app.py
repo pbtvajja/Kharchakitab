@@ -1,11 +1,8 @@
 import os
-from textwrap import dedent
-import os
 from flask import Flask, render_template, request, redirect, session, send_file
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
-import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -18,7 +15,14 @@ os.makedirs('data', exist_ok=True)
 if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=['Date', 'Amount', 'Reason', 'Category', 'User']).to_csv(DATA_FILE, index=False)
 if not os.path.exists(USER_FILE):
-    pd.DataFrame(columns=['username', 'password_hash', 'salary']).to_csv(USER_FILE, index=False)
+    pd.DataFrame(columns=['username', 'password_hash', 'salary', 'rule']).to_csv(USER_FILE, index=False)
+
+# Rule definitions
+RULES = {
+    "50-30-20": {"Need": 0.5, "Want": 0.3, "Saving": 0.2},
+    "60-20-20": {"Need": 0.6, "Want": 0.2, "Saving": 0.2},
+    "70-20-10": {"Need": 0.7, "Want": 0.0, "Saving": 0.2, "Giving": 0.1}
+}
 
 @app.route('/')
 def home():
@@ -32,13 +36,15 @@ def register():
         username = request.form['username']
         password = request.form['password']
         salary = float(request.form['salary'])
+        rule = request.form['rule']
         users = pd.read_csv(USER_FILE)
         if username in users['username'].values:
             return "Username already exists"
         new_user = pd.DataFrame([{
             'username': username,
             'password_hash': generate_password_hash(password),
-            'salary': salary
+            'salary': salary,
+            'rule': rule
         }])
         new_user.to_csv(USER_FILE, mode='a', header=not os.path.exists(USER_FILE), index=False)
         return redirect('/')
@@ -65,8 +71,15 @@ def dashboard():
     user_expenses = expenses[expenses['User'] == user]
 
     summary = user_expenses.groupby('Category')['Amount'].sum().to_dict()
-    for cat in ['Need', 'Want', 'Saving']:
+    for cat in ['Need', 'Want', 'Saving', 'Giving']:
         summary.setdefault(cat, 0)
+
+    # Load user profile
+    users = pd.read_csv(USER_FILE)
+    user_row = users[users['username'] == user].iloc[0]
+    salary = float(user_row['salary'])
+    rule = user_row['rule']
+    rule_split = RULES.get(rule, RULES['50-30-20'])
 
     # Daily trend graph
     daily = user_expenses.groupby('Date')['Amount'].sum().reset_index()
@@ -74,27 +87,15 @@ def dashboard():
     fig1.update_layout(title='Daily Spending Trend', xaxis_title='Date', yaxis_title='Amount (₹)', height=300)
     graph1 = pio.to_html(fig1, full_html=False)
 
-    # 50-30-20 graph
-    users = pd.read_csv(USER_FILE)
-    salary = float(users[users['username'] == user]['salary'].values[0])
-    totals = {
-        'Need': summary.get('Need', 0),
-        'Want': summary.get('Want', 0),
-        'Saving': summary.get('Saving', 0)
-    }
-    ideal = {
-        'Need': salary * 0.5,
-        'Want': salary * 0.3,
-        'Saving': salary * 0.2
-    }
-    df = pd.DataFrame({'Category': ['Need', 'Want', 'Saving']})
-    df['Actual'] = df['Category'].map(totals)
-    df['Ideal'] = df['Category'].map(ideal)
+    # Budget rule comparison graph
+    categories = list(rule_split.keys())
+    actual = [summary.get(cat, 0) for cat in categories]
+    ideal = [salary * pct for pct in rule_split.values()]
 
     fig2 = go.Figure()
-    fig2.add_trace(go.Bar(x=df['Category'], y=df['Actual'], name='Actual', marker_color='blue'))
-    fig2.add_trace(go.Bar(x=df['Category'], y=df['Ideal'], name='Ideal (50-30-20)', marker_color='green'))
-    fig2.update_layout(title='50-30-20 Budget Comparison', barmode='group', height=300)
+    fig2.add_trace(go.Bar(x=categories, y=actual, name='Actual', marker_color='blue'))
+    fig2.add_trace(go.Bar(x=categories, y=ideal, name=f'Ideal ({rule})', marker_color='green'))
+    fig2.update_layout(title='Budget Comparison', barmode='group', height=300)
     graph2 = pio.to_html(fig2, full_html=False)
 
     return render_template('index.html', summary=summary, data=user_expenses[::-1], graph_html1=graph1, graph_html2=graph2)
@@ -127,11 +128,6 @@ def download():
     download_path = f"data/{session['user']}_expenses.csv"
     user_df.to_csv(download_path, index=False)
     return send_file(download_path, as_attachment=True)
-
-@app.route('/favicon.ico')
-def favicon():
-    return redirect('/static/favicon.ico')
-
 
 if __name__ == '__main__':
     app.run(debug=True)
