@@ -1,0 +1,6 @@
+body {
+  font-family: "Segoe UI", sans-serif;
+}
+.graph-container {
+  overflow-x: auto;
+}
