@@ -1,9 +1,19 @@
 import os
-from flask import Flask, render_template, request, redirect, session, send_file
+import uuid
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
+from flask import Flask, render_template, request, redirect, session, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 
 app = Flask(__name__)
 app.secret_key = 'kharcha_secret'
@@ -15,14 +25,29 @@ os.makedirs('data', exist_ok=True)
 if not os.path.exists(DATA_FILE):
     pd.DataFrame(columns=['Date', 'Amount', 'Reason', 'Category', 'User']).to_csv(DATA_FILE, index=False)
 if not os.path.exists(USER_FILE):
-    pd.DataFrame(columns=['username', 'password_hash', 'salary', 'rule']).to_csv(USER_FILE, index=False)
+    pd.DataFrame(columns=['username', 'password_hash', 'email', 'salary', 'rule', 'token', 'is_verified']).to_csv(USER_FILE, index=False)
 
-# Rule definitions
 RULES = {
     "50-30-20": {"Need": 0.5, "Want": 0.3, "Saving": 0.2},
     "60-20-20": {"Need": 0.6, "Want": 0.2, "Saving": 0.2},
-    "70-20-10": {"Need": 0.7, "Want": 0.0, "Saving": 0.2, "Giving": 0.1}
+    "70-20-10": {"Need": 0.7, "Saving": 0.2, "Giving": 0.1}
 }
+
+def send_verification_email(email, token):
+    if not SENDGRID_API_KEY or not SENDER_EMAIL:
+        print("SendGrid credentials missing.")
+        return
+    verify_link = f"http://localhost:5000/verify/{token}"
+    message = Mail(
+        from_email=SENDER_EMAIL,
+        to_emails=email,
+        subject="Verify your KharchaKitab account",
+        html_content=f"<p>Click <a href='{verify_link}'>here</a> to verify your account.</p>")
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        sg.send(message)
+    except Exception as e:
+        print(e)
 
 @app.route('/')
 def home():
@@ -35,20 +60,39 @@ def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        email = request.form['email']
         salary = float(request.form['salary'])
         rule = request.form['rule']
+        token = str(uuid.uuid4())
+
         users = pd.read_csv(USER_FILE)
         if username in users['username'].values:
             return "Username already exists"
+
         new_user = pd.DataFrame([{
             'username': username,
             'password_hash': generate_password_hash(password),
+            'email': email,
             'salary': salary,
-            'rule': rule
+            'rule': rule,
+            'token': token,
+            'is_verified': False
         }])
         new_user.to_csv(USER_FILE, mode='a', header=not os.path.exists(USER_FILE), index=False)
-        return redirect('/')
+
+        send_verification_email(email, token)
+        return "Registration successful! Please check your email to verify your account."
     return render_template('register.html')
+
+@app.route('/verify/<token>')
+def verify(token):
+    users = pd.read_csv(USER_FILE)
+    index = users[users['token'] == token].index
+    if not index.empty:
+        users.loc[index, 'is_verified'] = True
+        users.to_csv(USER_FILE, index=False)
+        return "Account verified! You may now log in."
+    return "Invalid or expired verification link."
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -57,6 +101,8 @@ def login():
     users = pd.read_csv(USER_FILE)
     user_row = users[users['username'] == username]
     if not user_row.empty and check_password_hash(user_row.iloc[0]['password_hash'], password):
+        if not user_row.iloc[0]['is_verified']:
+            return "Please verify your email before logging in."
         session['user'] = username
         return redirect('/dashboard')
     return "Invalid credentials"
@@ -65,7 +111,6 @@ def login():
 def dashboard():
     if 'user' not in session:
         return redirect('/')
-
     user = session['user']
     expenses = pd.read_csv(DATA_FILE)
     user_expenses = expenses[expenses['User'] == user]
@@ -74,20 +119,17 @@ def dashboard():
     for cat in ['Need', 'Want', 'Saving', 'Giving']:
         summary.setdefault(cat, 0)
 
-    # Load user profile
     users = pd.read_csv(USER_FILE)
     user_row = users[users['username'] == user].iloc[0]
     salary = float(user_row['salary'])
     rule = user_row['rule']
     rule_split = RULES.get(rule, RULES['50-30-20'])
 
-    # Daily trend graph
     daily = user_expenses.groupby('Date')['Amount'].sum().reset_index()
     fig1 = go.Figure([go.Scatter(x=daily['Date'], y=daily['Amount'], mode='lines+markers', name='Spending')])
     fig1.update_layout(title='Daily Spending Trend', xaxis_title='Date', yaxis_title='Amount (₹)', height=300)
     graph1 = pio.to_html(fig1, full_html=False)
 
-    # Budget rule comparison graph
     categories = list(rule_split.keys())
     actual = [summary.get(cat, 0) for cat in categories]
     ideal = [salary * pct for pct in rule_split.values()]
